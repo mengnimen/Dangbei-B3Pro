@@ -1,0 +1,41 @@
+#!/bin/sh
+set -eu
+
+# Verified on one Dangbei B3 Pro (4 GB RAM) with Armbian 26.11,
+# Debian trixie and kernel 6.12.112-ophub. See README.md before use.
+expected=80144d71bb35ce37ae54bb41549d03b0dd1d6bdf6d852766e641477d90e955d8
+source=/usr/local/lib/b3pro/u-boot-2026.ext
+active=/boot/u-boot.emmc
+memory_kb=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)
+
+# The preparation script also enables this service on the USB system so that
+# armbian-install copies it to eMMC. Only the eMMC copy should perform reboots.
+root_device=$(readlink -f "$(findmnt -n -o SOURCE /)")
+root_parent=$(lsblk -n -o PKNAME "$root_device" | head -n 1)
+if [ -z "$root_parent" ] || [ ! -e "/sys/block/${root_parent}boot0" ]; then
+    exit 0
+fi
+
+hash_of() { sha256sum "$1" | cut -d ' ' -f 1; }
+
+if [ "$memory_kb" -lt 1500000 ]; then
+    [ ! -e "$active" ] || {
+        logger -t b3pro-boot-bridge 'unexpected active U-Boot on stock boot; stopping'
+        exit 1
+    }
+    [ "$(hash_of "$source")" = "$expected" ] || exit 1
+    cp "$source" "${active}.next"
+    [ "$(hash_of "${active}.next")" = "$expected" ] || exit 1
+    mv "${active}.next" "$active"
+    sync
+    logger -t b3pro-boot-bridge 'stock boot detected; warm reboot to initialize display'
+    systemctl reboot --no-block
+elif [ "$memory_kb" -gt 3000000 ] && [ -f "$active" ]; then
+    [ "$(hash_of "$active")" = "$expected" ] || {
+        logger -t b3pro-boot-bridge 'unknown active U-Boot; stopping'
+        exit 1
+    }
+    mv "$active" /boot/u-boot.emmc.warm-bridge-last
+    sync
+    logger -t b3pro-boot-bridge 'display boot complete; prepared stock cold boot fallback'
+fi
