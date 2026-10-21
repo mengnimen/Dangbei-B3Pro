@@ -26,8 +26,23 @@ elif [[ $(lsblk -dn -o TRAN "/dev/$root_parent" | tr -d '[:space:]') == usb ]]; 
     [[ -x /usr/sbin/armbian-install ]] || die '当前 USB 系统没有 armbian-install。'
     [[ $(hexdump -n 15 -x /boot/zImage | awk 'NR==1 {print $7}') == 0108 ]] || die '当前镜像的安装方式未经验证。'
     grep -qx 'FDT=/dtb/amlogic/meson-g12b-dangbei-b3-pro.dtb' /boot/uEnv.txt || die '请先将 U 盘 BOOT/uEnv.txt 的 FDT 行改为标准设备树路径。'
+    uenv_root=$(awk '/^APPEND=/{for (i=1;i<=NF;i++) {value=$i; sub(/^APPEND=/,"",value); if (value~/^root=/) {sub(/^root=/,"",value); print value; exit}}}' /boot/uEnv.txt)
+    [[ -n "$uenv_root" ]] || die 'USB BOOT/uEnv.txt 缺少 root= 参数。'
+    if [[ "$uenv_root" == /dev/* ]]; then
+        configured_root=$(readlink -f "$uenv_root")
+    else
+        configured_root=$(findfs "$uenv_root" 2>/dev/null) || die "USB BOOT 的 root=$uenv_root 找不到对应分区。"
+        configured_root=$(readlink -f "$configured_root")
+    fi
+    [[ "$configured_root" == "$root_device" ]] || die "USB BOOT 的 root=$uenv_root 与当前 USB 根分区 $root_device 不一致；停止安装。"
 else
     die '当前系统既不是已识别的 USB 系统，也不是 eMMC 系统。'
+fi
+
+if [[ $mode == emmc ]]; then
+    [[ ${1:-} == --existing-emmc && $# -eq 1 ]] || die '当前根系统是 eMMC，绝不能在这里运行 armbian-install。若只想给已安装的 eMMC 补装显示服务，请运行：bash /boot/B3Pro/install.sh --existing-emmc'
+elif [[ $# -ne 0 ]]; then
+    die '当前根系统是 U 盘，运行本脚本不需要参数。'
 fi
 
 install -d -m 0755 /usr/local/lib/b3pro
@@ -45,10 +60,8 @@ else
 fi
 if command -v bluetoothctl >/dev/null; then
     systemctl enable --now bluetooth.service || echo '蓝牙服务启用失败，请检查系统日志。' >&2
-elif apt-get update && apt-get install -y bluez; then
-    systemctl enable --now bluetooth.service || echo '蓝牙服务启用失败，请检查系统日志。' >&2
 else
-    echo 'BlueZ 暂未安装；检查网络后安装 bluez。' >&2
+    echo 'BlueZ 暂未安装；系统装好后如需蓝牙，再安装 bluez。' >&2
 fi
 echo 'Wi-Fi 和蓝牙的板级配置在已部署的 DTB 中；无线固件由 Armbian 镜像提供。'
 if [[ $mode == usb ]]; then
