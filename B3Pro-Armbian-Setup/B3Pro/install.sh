@@ -10,7 +10,7 @@ expected_uboot=80144d71bb35ce37ae54bb41549d03b0dd1d6bdf6d852766e641477d90e955d8
 ask_yes() {
     local reply
     trap ':' INT
-    if reply=$(trap 'exit 130' INT; IFS= read -r -p "$1 [y/N] " answer; printf '%s' "${answer-}"); then
+    if reply=$(trap 'exit 130' INT; printf '%s [y/N] ' "$1" >&2; IFS= read -r answer; printf '%s' "${answer-}"); then
         :
     else
         printf '\n已跳过当前选择。\n'
@@ -130,6 +130,34 @@ emmc_disk() {
     return 1
 }
 
+preflight_install() {
+    local emmc=$1 source_used target_size
+    source_used=$(df -B1 --output=used / | tail -n 1 | tr -d '[:space:]') || die '无法读取 USB 根分区的已用空间。'
+    target_size=$(blockdev --getsize64 "/dev/$emmc") || die '无法读取 eMMC 容量。'
+    [[ $source_used =~ ^[0-9]+$ && $target_size =~ ^[0-9]+$ ]] || die '磁盘容量检测结果无效。'
+    (( source_used + 3 * 1024 * 1024 * 1024 < target_size )) ||
+        die 'USB 根分区已用空间接近或超过 eMMC 可用容量；保留当前 USB，不要刷写。'
+    say '正在只读检查 USB 系统的 /usr 文件；这一步可能需要几分钟。'
+    if ! (cd / && tar -cf /dev/null usr); then
+        die 'USB 系统的 /usr 读取失败。不要格式化 eMMC；先检查 USB 盘、接口和供电。'
+    fi
+    source_usr_files=$(find /usr -type f | wc -l | tr -d '[:space:]') || die '无法统计 USB 系统的 /usr 文件。'
+    [[ $source_usr_files =~ ^[0-9]+$ && $source_usr_files -gt 0 ]] || die 'USB 系统的 /usr 文件数量异常。'
+    say 'USB 来源盘的容量与 /usr 读取检查通过。'
+}
+
+verify_emmc_root() (
+    local device=$1 target target_usr_files
+    target=$(mktemp -d /tmp/b3pro-emmc-root.XXXXXX) || return 1
+    trap 'if mountpoint -q "$target"; then umount "$target" || true; fi; rmdir "$target" 2>/dev/null || true' EXIT
+    mount -t ext4 -o ro,noload "$device" "$target" || return 1
+    [[ -x $target/usr/bin/bash && -x $target/usr/bin/tar && -x $target/usr/bin/ls ]] || return 1
+    [[ -s $target/etc/os-release ]] || return 1
+    target_usr_files=$(find "$target/usr" -type f | wc -l | tr -d '[:space:]') || return 1
+    [[ $target_usr_files =~ ^[0-9]+$ ]] || return 1
+    (( target_usr_files >= source_usr_files * 99 / 100 )) || return 1
+)
+
 check_usb_root() {
     local uenv_root configured_root
     [[ -x /usr/sbin/armbian-install ]] || die '当前 USB 系统没有 armbian-install。'
@@ -201,7 +229,9 @@ if ! ask_yes '现在运行 armbian-install 写入 eMMC 吗？'; then
 fi
 
 emmc=$(emmc_disk) || die '找不到 eMMC 设备。'
+preflight_install "$emmc"
 say "将运行 armbian-install；请确认安装目标是 /dev/$emmc。"
+before_dmesg_lines=$(dmesg | wc -l | tr -d '[:space:]')
 if ! armbian-install -m no -a yes; then
     die 'armbian-install 未成功完成。不要从 eMMC 启动；保留完整报错，先检查安装结果。'
 fi
@@ -210,6 +240,7 @@ emmc_boot=/dev/${emmc}p1
 emmc_root=/dev/${emmc}p2
 [[ $(blkid -s TYPE -o value "$emmc_boot") == vfat ]] || die 'eMMC BOOT 文件系统不是预期的 vfat，无法确认安装成功。'
 [[ $(blkid -s TYPE -o value "$emmc_root") == ext4 ]] || die 'eMMC 根分区不是预期的 ext4，无法确认安装成功。'
+verify_emmc_root "$emmc_root" || die 'eMMC 根分区的关键文件或 /usr 文件数量不完整。安装失败，不要拔掉 USB 后启动。'
 target=$(mktemp -d /tmp/b3pro-emmc-boot.XXXXXX)
 mount "$emmc_boot" "$target" || die '无法挂载 eMMC BOOT，无法确认安装成功。'
 cleanup_target() {
@@ -246,5 +277,10 @@ umount "$target" || die '无法卸载 eMMC BOOT，请先检查，暂时不要断
 rmdir "$target"
 trap - EXIT
 
+new_storage_errors=$(dmesg | tail -n "+$((before_dmesg_lines + 1))" | grep -Ei 'I/O error|Buffer I/O|EXT4-fs error|uas_eh_|reset SuperSpeed USB device|mmc_erase: erase error|cache flush error' || true)
+if [[ -n $new_storage_errors ]]; then
+    printf '%s\n' "$new_storage_errors" >&2
+    die '安装期间出现存储错误。即使安装器报告成功，也请保留救援 U 盘并先核验 eMMC。'
+fi
 say 'eMMC 安装已结束。请先检查安装器没有报错，再运行 poweroff，拔掉 USB 后通电测试。'
 say '如果选择了显示修复，首次冷启动会自动热重启一次。以后可在 eMMC 系统重跑本脚本补装红外或蓝牙。'
