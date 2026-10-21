@@ -1,5 +1,7 @@
 # 当贝B3Pro刷armbian教程
 
+### 一定要用质量好点的U盘或者固态硬盘！！！！
+
 适用：4GB 当贝 B3 Pro；实测 ophub Armbian 26.11 / Debian trixie / server / 内核 `6.12.112-ophub`。本包不含系统镜像。请保留一只确认能启动的 U 盘作为恢复介质。
 
 ## 1. 制作 U 盘
