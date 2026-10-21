@@ -4,7 +4,11 @@
 
 ## 1. 制作 U 盘
 
-先把 Armbian 镜像写入 U 盘。打开本包的 `B3Pro-Armbian-Setup` 文件夹，**全选里面的内容**，粘贴到 U 盘 **BOOT 分区根目录**。不要复制最外层文件夹。文件管理器提示处理已有 `dtb` 文件夹时，选“合并”，不要用本包的小文件夹替换镜像原有的整个 `dtb` 文件夹。
+写系统镜像
+
+从 [ophub Armbian Releases](https://github.com/ophub/amlogic-s9xxx-armbian/releases) 下载 **amlogic / s922x / trixie / server** 镜像，我测试的内核 6.12.112-ophub。用 balenaEtcher 或 Rufus 写到 U 盘；会清空 U 盘。
+
+打开本包的 `B3Pro-Armbian-Setup` 文件夹，**全选里面的内容**，粘贴到 U 盘 **BOOT 分区根目录**。不要复制最外层文件夹。文件管理器提示处理已有 `dtb` 文件夹时，选“合并”，不要用本包的小文件夹替换镜像原有的整个 `dtb` 文件夹。
 
 ```text
 BOOT/
