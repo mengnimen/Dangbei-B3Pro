@@ -1,6 +1,8 @@
 # 当贝B3Pro刷armbian教程
 
-### 一定要用质量好点的U盘或者固态硬盘！！！！
+### 一定要用质量好点的U盘，固态硬盘改用普通 USB 存储驱动模式使用，下方有操作方法！！！！
+
+
 
 适用：4GB 当贝 B3 Pro；实测 ophub Armbian 26.11 / Debian trixie / server / 内核 `6.12.112-ophub`。本包不含系统镜像。请保留一只确认能启动的 U 盘作为恢复介质。
 
@@ -56,6 +58,8 @@ bash /boot/B3Pro/install.sh
 
 每项只有输入 `y` 才执行，回车或输入 `n` 都跳过。红外和蓝牙是可选项；安装时按 `Ctrl+C` 可中断当前项，脚本会继续后面的步骤。以后在 eMMC 系统重新运行同一个 `install.sh` 可以补装。**刷写 eMMC 前脚本不会为红外或蓝牙联网安装软件包**，避免网络或软件源问题影响刷机；若 USB 系统缺少 `ir-keytable` 或 `bluez`，请在 eMMC 启动后再运行本脚本补装。
 
+
+
 选择写入 eMMC 后，脚本会调用原版 `armbian-install`，设备型号、安装目标和文件系统仍按它的提示选择。实测机选择 **0 / Other Customize**：
 
 | 提示 | 填写 |
@@ -89,6 +93,17 @@ bash /boot/B3Pro/install.sh
 ## 启动顺序与限制
 
 上游 [USB 引导脚本](https://github.com/ophub/amlogic-s9xxx-armbian/blob/main/build-armbian/armbian-files/platform-files/amlogic/bootfs/boot.cmd)会扫描 USB，而安装到 eMMC 的 [boot-emmc.cmd](https://github.com/ophub/amlogic-s9xxx-armbian/blob/main/build-armbian/armbian-files/platform-files/amlogic/bootfs/boot-emmc.cmd)只扫描 eMMC。本包的 USB 优先选项已在一台 B3 Pro 上验证：有可启动 USB 时 `/` 与 `/boot` 来自 USB；U 盘没有启动配置或拔掉 U 盘时回退 eMMC。若 U 盘启动文件齐全、但 Linux 根文件系统损坏，引导程序无法预先判断，应拔掉该盘后从 eMMC 启动。
+
+---
+
+
+## 固态写入报错解决方法：
+
+若出现大量 tar: ... Input/output error，立即停止安装并保留救援 U 盘。此类错误说明安装时读取或写入失败，不能仅靠调整启动脚本修复；需要检查实际报错时的内核日志以及 USB 盘、转接器、供电和 eMMC。安装中断后的 eMMC 可能已被格式化，不能据此判断它还能启动。
+
+若使用 USB 固态盘，开机日志出现 uas_eh_abort_handler、uas_eh_device_reset_handler 和 reset SuperSpeed USB device，先检查 USB 转接器的厂商/产品 ID。
+
+实测某只 Ugreen/ASMedia 转接器为 174c:55aa，可在该 USB 盘 BOOT/uEnv.txt 的 APPEND= 行末加 `usb-storage.quirks=174c:55aa:u`，注意前面加个空格。 让它改用普通 USB 存储驱动后重启测试。此参数仅针对该 ID；其他转接器不能直接照抄。即使能正常启动，也应检查内核日志不再出现 USB 重置，再考虑写入 eMMC。Linux 内核的 将 u 的 [参数文档](https://www.kernel.org/doc/html/next/admin-guide/kernel-parameters.html) 定义为禁用 UAS 驱动绑定。
 
 ---
 
