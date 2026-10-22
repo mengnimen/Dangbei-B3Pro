@@ -1,7 +1,0 @@
-[Unit]
-Description=Delay B3 Pro HDMI warm reboot until the stock boot is stable
-
-[Timer]
-OnActiveSec=90s
-AccuracySec=1s
-Unit=b3pro-display-warm-reboot.service

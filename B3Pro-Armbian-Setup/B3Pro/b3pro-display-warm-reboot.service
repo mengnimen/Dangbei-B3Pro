@@ -1,8 +1,0 @@
-[Unit]
-Description=Restart B3 Pro after stable stock boot for HDMI
-After=local-fs.target
-ConditionPathIsMountPoint=/boot
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/sbin/b3pro-display-boot-bridge --reboot-now
