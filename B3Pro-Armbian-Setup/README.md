@@ -6,7 +6,7 @@
 
 从 [ophub Armbian Releases](https://github.com/ophub/amlogic-s9xxx-armbian/releases) 获取上述镜像，用 balenaEtcher 或 Rufus 写入 U 盘或 USB 固态盘。写入会清空目标盘。
 
-解压本包，**打开 `B3Pro-Armbian-Setup` 文件夹，全选里面的内容，粘贴到新盘的 BOOT 分区根目录**。不要把最外层文件夹一起复制。遇到已有 `dtb` 文件夹时选“合并”，保留镜像原有的其他设备树。
+解压本包，**打开 `B3Pro-Armbian` 文件夹，全选里面的内容，粘贴到新盘的 BOOT 分区根目录**。不要把最外层文件夹一起复制。遇到已有 `dtb` 文件夹时选“合并”，保留镜像原有的其他设备树。
 
 ```text
 BOOT/
@@ -56,7 +56,7 @@ bash /boot/B3Pro/install.sh
 | 脚本问题 | 建议回答 |
 | --- | --- |
 | 启用 eMMC 冷启动直接显示？ | `y` |
-| 安装红外支持？ | 按需 `y`，也可回车跳过 |
+| 配置红外键表？ | 按需 `y`，也可回车跳过 |
 | 安装蓝牙支持？ | 按需 `y`，也可回车跳过 |
 | 启用并连接 Wi-Fi？ | 按需 `y`，也可回车跳过 |
 | 安装 eMMC 后启用 USB 优先启动？ | `y` |
@@ -65,6 +65,20 @@ bash /boot/B3Pro/install.sh
 选择 Wi-Fi 后，脚本会开启无线电、显示附近网络，并让你输入 SSID；需要密码时由 NetworkManager 在终端询问。SSID 留空表示只开启 Wi-Fi，不建立连接。成功建立的连接配置会随 USB 系统一起复制到 eMMC。若当前没有 `nmcli` 或 Wi-Fi 接口，脚本会提示并跳过，不会阻止 eMMC 安装；可在 eMMC 启动后补设。密码不在本包中。
 
 Wi-Fi、红外、蓝牙可以按 `Ctrl+C` 中断当前安装项，脚本会继续后面的步骤；以后可在 eMMC 系统重新运行同一脚本补装。刷写 eMMC 前，脚本不会为红外或蓝牙联网安装软件包。Wi-Fi 的板级配置在本包设备树中，固件由镜像提供。
+
+若在 USB 系统选择了红外 `y`，但镜像没有预装 `ir-keytable`，这一步只保存键表，命令仍会显示 `command not found`。**不需要重启来安装命令**；进入 eMMC 系统后重新运行本脚本，对红外选项输入 `y`，脚本才会安装缺少的软件并加载键表。安装时若提示软件源或网络错误，先解决该错误，再重试红外选项。
+
+若已经在 eMMC 系统选择红外 `y`，却仍显示 `ir-keytable: command not found`，表示安装步骤没有成功完成。运行 `apt-get update --error-on=any && apt-get install -y ir-keytable` 查看具体报错；安装成功后重跑本脚本、仅对红外选项输入 `y`，以加载本包键表。此过程不需要重启。Debian trixie 的 arm64 仓库提供这个软件包。
+
+软件源问题不要按固定域名替换。先看 APT 的具体错误，再检查当前启用的源及 `ir-keytable` 候选版本：
+
+```bash
+apt-get update --error-on=any
+apt-cache policy ir-keytable
+grep -hE '^(deb |URIs:|Suites:|Components:)' /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources 2>/dev/null
+```
+
+`apt-get update` 会显示失败的源和原因；使用 `--error-on=any` 是为了避免某些源下载失败时仍显示 `Reading package lists... Done`。若 `apt-cache policy` 显示 `Candidate: (none)`，说明当前索引里没有可安装版本。根据具体错误修复对应的软件源或网络连接后，重试 `apt-get update --error-on=any && apt-get install -y ir-keytable`。脚本不会自动更改软件源。安装成功后重跑脚本，选择红外 `y` 加载键表。
 
 脚本先只读检查 USB 系统的 `/usr` 和 eMMC 容量，然后调用 `armbian-install -m no -a yes`。安装器中选择 **`0 / Other Customize`**，按实测机填写：
 
