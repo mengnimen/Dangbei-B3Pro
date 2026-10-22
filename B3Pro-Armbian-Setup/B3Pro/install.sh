@@ -11,6 +11,13 @@ expected_old_dtb=0eaf9cc8f6e02d7a78409372420f7fa881b9a097e5c4ec9b21552ddf8d08e1e
 expected_stock_emmc_script=26743987a269dba16a9cd2e56515acf26daedc39e1675cfd86f9d3f315ae0795
 hash_of() { sha256sum "$1" | cut -d ' ' -f 1; }
 
+refresh_optional_packages() {
+    if ! apt-get update --error-on=any; then
+        say 'APT 软件源更新失败；请查看上方失败的地址及原因，检查网络、DNS、源地址和系统版本后重试。脚本不会替换软件源。'
+        return 1
+    fi
+}
+
 ask_yes() {
     local reply
     trap ':' INT
@@ -126,7 +133,16 @@ install_ir() {
             return 2
         fi
         say '正在安装 ir-keytable；按 Ctrl+C 可跳过红外。'
-        apt-get update && apt-get install -y ir-keytable || return 1
+        refresh_optional_packages || return 1
+        if ! apt-cache show ir-keytable >/dev/null 2>&1; then
+            say '当前 APT 索引没有 ir-keytable；请检查已启用的软件源及其发行版、组件。'
+            return 1
+        fi
+        if ! apt-get install -y ir-keytable; then
+            say 'ir-keytable 安装失败；请检查上方 apt 报错，无需重启。'
+            return 1
+        fi
+        command -v ir-keytable >/dev/null || { say '安装器返回成功，但仍找不到 ir-keytable；请检查 /usr/bin/ir-keytable。'; return 1; }
     fi
     if [[ -f /etc/rc_maps.cfg ]]; then
         cp -p /etc/rc_maps.cfg "/etc/rc_maps.cfg.bak-$(date +%Y%m%d-%H%M%S)" || return 1
@@ -155,7 +171,12 @@ install_bluetooth() {
             return 2
         fi
         say '正在安装 bluez；按 Ctrl+C 可跳过蓝牙。'
-        apt-get update && apt-get install -y bluez || return 1
+        refresh_optional_packages || return 1
+        if ! apt-cache show bluez >/dev/null 2>&1; then
+            say '当前 APT 索引没有 bluez；请检查已启用的软件源及其发行版、组件。'
+            return 1
+        fi
+        apt-get install -y bluez || return 1
     fi
     systemctl enable --now bluetooth.service || return 1
 }
@@ -300,7 +321,7 @@ if ask_yes '启用 eMMC 冷启动直接显示吗（无需等待自动热重启�
         say '显示修复文件检查通过；写入 eMMC 并核验成功后才会安装到 eMMC。'
     fi
 fi
-if ask_yes '安装红外支持吗？'; then run_optional '红外' install_ir; fi
+if ask_yes '配置红外键表吗（USB 系统若缺 ir-keytable，需在 eMMC 启动后补装）？'; then run_optional '红外' install_ir; fi
 if ask_yes '安装蓝牙支持吗？'; then run_optional '蓝牙' install_bluetooth; fi
 if ask_yes '启用并连接 Wi-Fi 吗？'; then run_optional 'Wi-Fi' setup_wifi; fi
 say 'Wi-Fi 的板级配置已包含在设备树中，固件由 Armbian 镜像提供。'
@@ -393,4 +414,4 @@ fi
 say 'eMMC 安装已结束。请先检查安装器没有报错，再运行 poweroff，拔掉 USB 后通电测试。'
 say '如果选择了冷启动直显，eMMC 应直接进入登录界面，不需要等待自动热重启。'
 say '若无法启动，请插回已验证的救援 USB 检查 eMMC，不要反复运行安装器。'
-say '以后可在 eMMC 系统重跑本脚本配置 Wi-Fi，或补装红外、蓝牙。'
+say '以后可在 eMMC 系统重跑本脚本配置 Wi-Fi，或补装红外、蓝牙。若 ir-keytable 命令不存在，无需重启，重跑本脚本并选择红外即可。'
