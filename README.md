@@ -6,7 +6,7 @@
 
 从 [ophub Armbian Releases](https://github.com/ophub/amlogic-s9xxx-armbian/releases) 获取上述镜像，用 balenaEtcher 或 Rufus 写入 U 盘或 USB 固态盘。写入会清空目标盘。
 
-解压本包，**打开 `B3Pro-Armbian-Setup-aionui` 文件夹，全选里面的内容，粘贴到新盘的 BOOT 分区根目录**。不要把最外层文件夹一起复制。遇到已有 `dtb` 文件夹时选“合并”，保留镜像原有的其他设备树。
+解压本包，**打开 `B3Pro-Armbian-Setup` 文件夹，全选里面的内容，粘贴到新盘的 BOOT 分区根目录**。不要把最外层文件夹一起复制。遇到已有 `dtb` 文件夹时选“合并”，保留镜像原有的其他设备树。
 
 ```text
 BOOT/
