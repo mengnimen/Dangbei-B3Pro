@@ -21,8 +21,11 @@ BOOT/
 ├── B3Pro/
 │   ├── install.sh                 ← 唯一需要手动运行的脚本
 │   ├── boot-usb-first.cmd
+│   ├── boot-emmc-failsafe.cmd     ← eMMC 显示引导保护源文件
 │   ├── b3pro-display-boot-bridge  ← 显示服务开机时使用，不用手动运行
 │   ├── b3pro-display-boot-bridge.service
+│   ├── b3pro-display-warm-reboot.service
+│   ├── b3pro-display-warm-reboot.timer
 │   └── ir/dangbei-b3-pro.toml
 ├── dtb/amlogic/meson-g12b-dangbei-b3-pro.dtb
 ├── uEnv.txt                       ← 镜像原有文件，不要覆盖
@@ -38,7 +41,7 @@ BOOT/
 FDT=/dtb/amlogic/meson-g12b-dangbei-b3-pro.dtb
 ```
 
-保留原来的 `LINUX`、`INITRD` 和 `APPEND` 中的 `root=`。如果 `APPEND` 没有 `rootwait`，在该行末尾加一个空格和 `rootwait`。不同镜像的根分区参数可能不同，所以本包不提供可直接覆盖的通用 `uEnv.txt`。
+保留原来的 `LINUX`、`INITRD` 和 `APPEND` 中的 `root=`。不要把旧盘或 eMMC 的 `uEnv.txt` 复制到新盘：旧 UUID 可能指向另一块磁盘。如果 `APPEND` 没有 `rootwait`，在该行末尾加一个空格和 `rootwait`。不同镜像的根分区参数可能不同，所以本包不提供可直接覆盖的通用 `uEnv.txt`。电脑上不用运行脚本。
 
 ## 2. 在盒子的 U 盘系统运行一个命令
 
@@ -60,7 +63,9 @@ bash /boot/B3Pro/install.sh
 
 
 
-选择写入 eMMC 后，脚本会调用原版 `armbian-install`，设备型号、安装目标和文件系统仍按它的提示选择。实测机选择 **0 / Other Customize**：
+选择写入 eMMC 后，脚本先检查 USB 系统已用空间，并只读遍历 `/usr` 文件；通过后才调用原版 `armbian-install`。这能提前发现一部分来源盘读取故障，但不能保证安装期间不会发生 USB、供电或 eMMC 写入错误。设备型号、安装目标和文件系统仍按安装器提示选择。实测机选择 **0 / Other Customize**：
+
+`armbian-install` 会把**当前运行的 USB 系统**复制到 eMMC，包括账号、密码、网络配置和首次登录状态。eMMC 虽会重新分区、格式化，但不是重新初始化的空白系统；如果 USB 系统已设置过登录信息，eMMC 通常不会再要求设置一次。
 
 | 提示 | 填写 |
 | --- | --- |
@@ -71,7 +76,11 @@ bash /boot/B3Pro/install.sh
 | BOOTLOADER_IMG Name | 留空 |
 | 文件系统 | `1` / ext4 |
 
-**确认安装目标是盒子的 eMMC，再继续。** `armbian-install` 若报错或被中断，脚本会停止，不会修改 eMMC 启动顺序。若安装器返回成功，脚本还会检查 eMMC 的根分区、BOOT 文件和 `root=` 指向；缺少 `rootwait` 时会先备份并补上。若选了 USB 优先，再备份 eMMC 原有 `boot.cmd`、`boot.scr`，生成 USB 优先的新脚本。等 `install.sh` 明确完成后，执行 `poweroff`，拔掉 U 盘，再通电测试。选择显示修复的机器会自动热重启一次后显示登录界面。
+**确认安装目标是盒子的 eMMC，再继续。** `armbian-install` 若报错或被中断，脚本会停止，不会修改 eMMC 启动顺序。若安装器返回成功，脚本会检查 eMMC 根分区的关键命令和 `/usr` 文件数量，以及 BOOT 文件与 `root=` 指向；缺少 `rootwait` 时会先备份并补上。若选了 USB 优先，再备份 eMMC 原有 `boot.cmd`、`boot.scr`，生成 USB 优先的新脚本。
+
+显示服务只在 eMMC 写入并核验成功后安装到 eMMC；选择不安装显示修复时，会关闭从 USB 系统复制过去的旧显示服务。选择显示修复时，还会备份 eMMC 原有 `emmc_autoscript`，安装一次性引导保护。脚本最后检查安装期间是否出现新的 USB 或 eMMC I/O 错误；发现错误时，请保留救援盘先核验。
+
+等 `install.sh` 明确完成后，执行 `poweroff`，拔掉 U 盘，再通电测试。选择显示修复的机器，请等待约三分钟：eMMC 冷启动后会先运行约 90 秒，再自动热重启一次并尝试显示登录界面。不要在等待中手动断电。
 
 ## 已装好 eMMC，后来要补装功能
 
@@ -94,6 +103,14 @@ bash /boot/B3Pro/install.sh
 
 上游 [USB 引导脚本](https://github.com/ophub/amlogic-s9xxx-armbian/blob/main/build-armbian/armbian-files/platform-files/amlogic/bootfs/boot.cmd)会扫描 USB，而安装到 eMMC 的 [boot-emmc.cmd](https://github.com/ophub/amlogic-s9xxx-armbian/blob/main/build-armbian/armbian-files/platform-files/amlogic/bootfs/boot-emmc.cmd)只扫描 eMMC。本包的 USB 优先选项已在一台 B3 Pro 上验证：有可启动 USB 时 `/` 与 `/boot` 来自 USB；U 盘没有启动配置或拔掉 U 盘时回退 eMMC。若 U 盘启动文件齐全、但 Linux 根文件系统损坏，引导程序无法预先判断，应拔掉该盘后从 eMMC 启动。
 
+### eMMC HDMI 显示修复怎样工作
+
+`install.sh` 只在安装时运行一次。它安装的引导脚本和显示服务会在以后开机时运行。选中显示修复后，盒子无 USB 冷启动时先走原 eMMC 引导；这台机器实测可能已进入 Linux、SSH 可用，但 HDMI 黑屏。显示服务等待约 90 秒，再把已验证的 `u-boot.ext` 临时复制到 eMMC BOOT 分区，命名为 `u-boot.emmc` 并热重启。原引导器在这次启动时加载它；实测随后能显示 Armbian 登录界面。成功进入 Linux 后，服务移走临时文件，让下次冷启动仍先走原引导。此方案没有永久改写盒子底层的 U-Boot 固件，也没有修复尚未定位的冷启动 HDMI 初始化原因。
+
+为了防止临时 U-Boot 启动失败后每次开机重复尝试，引导脚本会在尝试前保存一次标记。**如果标记已成功保存**，但这次热启动没有进入 Linux，下次断电开机会跳过临时 U-Boot、尝试原 eMMC 引导；启动后的服务会移走临时文件并停止自动重试。原引导可能启动 Linux 但 HDMI 仍黑，请用 SSH 判断系统是否上线。
+
+这项回退不是突然断电保护的保证：如果正好在写 eMMC 引导环境或 BOOT 分区时断电，不能保证下次直接启动。我们实测了两次正常关机后的无 USB 冷启动，均自动热重启并显示登录界面；没有故意断电验证失败分支。若等待约三分钟仍黑屏，可断电再开一次；若仍无法启动，用救援 U 盘检查 eMMC，不要反复运行安装器。
+
 ---
 
 
@@ -103,7 +120,7 @@ bash /boot/B3Pro/install.sh
 
 若使用 USB 固态盘，开机日志出现 uas_eh_abort_handler、uas_eh_device_reset_handler 和 reset SuperSpeed USB device，先检查 USB 转接器的厂商/产品 ID。
 
-实测某只 Ugreen/ASMedia 转接器为 174c:55aa，可在该 USB 盘 BOOT/uEnv.txt 的 APPEND= 行末加 `usb-storage.quirks=174c:55aa:u`，注意前面加个空格。 让它改用普通 USB 存储驱动后重启测试。此参数仅针对该 ID；其他转接器不能直接照抄。即使能正常启动，也应检查内核日志不再出现 USB 重置，再考虑写入 eMMC。Linux 内核的 将 u 的 [参数文档](https://www.kernel.org/doc/html/next/admin-guide/kernel-parameters.html) 定义为禁用 UAS 驱动绑定。
+实测某只 Ugreen/ASMedia 转接器为 `174c:55aa`，可在该 USB 盘 `BOOT/uEnv.txt` 的 `APPEND=` 行末加 ` usb-storage.quirks=174c:55aa:u`（前面有一个空格），让它改用普通 USB 存储驱动后重启测试。此参数仅针对该 ID；其他转接器不能直接照抄。即使能正常启动，也应检查内核日志不再出现 USB 重置，再考虑写入 eMMC。Linux 内核的[参数文档](https://www.kernel.org/doc/html/next/admin-guide/kernel-parameters.html)将 `u` 定义为禁用 UAS 驱动绑定。
 
 ---
 
