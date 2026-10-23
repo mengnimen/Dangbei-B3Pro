@@ -120,6 +120,17 @@ install_emmc_direct() {
     dd if="$boot_dir/emmc_autoscript" bs=1 skip=72 count="$size" status=none | cmp -s - "$source"
 }
 
+disable_emmc_direct() {
+    local boot_dir=$1
+    [[ -e $boot_dir/u-boot.emmc ]] || return 0
+    [[ $(hash_of "$boot_dir/u-boot.emmc") == "$expected_uboot" ]] || return 1
+    [[ ! -e $boot_dir/u-boot.emmc.b3pro-disabled ]] || return 1
+    mv "$boot_dir/u-boot.emmc" "$boot_dir/u-boot.emmc.b3pro-disabled" || return 1
+    sync
+    [[ ! -e $boot_dir/u-boot.emmc ]] || return 1
+    say '未启用直显：已将现有 u-boot.emmc 备份并停用。'
+}
+
 install_ir() {
     local map=/etc/rc_keymaps/dangbei-b3-pro.toml rule='meson-ir * /etc/rc_keymaps/dangbei-b3-pro.toml'
     local tmp rc found=0
@@ -327,6 +338,9 @@ if ask_yes '启用并连接 Wi-Fi 吗？'; then run_optional 'Wi-Fi' setup_wifi;
 say 'Wi-Fi 的板级配置已包含在设备树中，固件由 Armbian 镜像提供。'
 
 if [[ $mode == emmc ]]; then
+    if [[ $display_requested == no ]]; then
+        disable_emmc_direct /boot || die '无法停用 eMMC 现有的 u-boot.emmc；请先检查 BOOT 文件。'
+    fi
     if ask_yes '设置可启动 USB 优先、无系统 USB 回退 eMMC 吗？'; then
         apply_usb_first /boot || die 'USB 优先设置失败；原引导文件备份仍保留，请检查。'
     fi
@@ -400,6 +414,8 @@ fi
 install_board_dtb "$target" || die 'eMMC 设备树修补失败；请保留 USB 救援盘。'
 if [[ $display_requested == yes ]]; then
     install_emmc_direct "$target" || die 'eMMC 冷启动直显引导安装失败；请保留 USB 救援盘。'
+else
+    disable_emmc_direct "$target" || die '无法停用 eMMC 现有的 u-boot.emmc；请保留 USB 救援盘。'
 fi
 
 umount "$target" || die '无法卸载 eMMC BOOT，请先检查，暂时不要断电。'
@@ -412,6 +428,10 @@ if [[ -n $new_storage_errors ]]; then
     die '安装期间出现存储错误。即使安装器报告成功，也请保留救援 U 盘并先核验 eMMC。'
 fi
 say 'eMMC 安装已结束。请先检查安装器没有报错，再运行 poweroff，拔掉 USB 后通电测试。'
-say '如果选择了冷启动直显，eMMC 应直接进入登录界面，不需要等待自动热重启。'
+if [[ $display_requested == yes ]]; then
+    say '已选择冷启动直显；请重点验证断电后的多次冷启动。'
+else
+    say '未选择冷启动直显；eMMC BOOT 不会加载 u-boot.emmc。HDMI 是否亮屏取决于冷启动时的连接状态。'
+fi
 say '若无法启动，请插回已验证的救援 USB 检查 eMMC，不要反复运行安装器。'
 say '以后可在 eMMC 系统重跑本脚本配置 Wi-Fi，或补装红外、蓝牙。若 ir-keytable 命令不存在，无需重启，重跑本脚本并选择红外即可。'
